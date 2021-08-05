@@ -1,23 +1,31 @@
+#   brazilsouth   
+#   Standard_DS2_v2
+#   Standard_F4s_v2  
+
+az vm list-sizes -l brazilsouth | jq -c '.[] | select(.name | contains("Standard_DS2_"))'
+
+
+
 echo "Set variables..." 
 
 $cleanAfter = "false" 
 
-$suffix = "demo000203"
+$suffix = "demo-rpsr-002"
 $vnetName = "vn-aks"
 $spName = "AKSClusterServicePrincipal-"+ $suffix
 $subscriptionId = (az account show | ConvertFrom-Json).id
 $tenantId = (az account show | ConvertFrom-Json).tenantId
-$location = "eastus2"
-$resourceGroupName = "rg-" + $suffix
+$location = "brazilsouth"
+$resourceGroupName = "rg-devops-teste"
 
 $aksName = "aks-" + $suffix
 $aksVersion = "1.19.11"
 $keyVaultName = "keyvault-" + $suffix
 
-$secret1Name = "DataBaseUser"
-$secret2Name = "DataBasePassword"
+$secret1Name = "DBUsername"
+$secret2Name = "DBPassword"
 
-$secret1Alias = "DB_USER"
+$secret1Alias = "DB_USERNAME"
 $secret2Alias = "DB_PASSWORD" 
 
 $identityName = "identity-aks-kv" 
@@ -26,6 +34,8 @@ $secretProviderClassName = "secret-provider-kv"
 
 #secrets
 $secretName = "secret-kv"
+$K8sSecret1 = "usr"
+$K8sSecret2 = "psw"
 
 echo "Creating Resource Group $resourceGroupName ..."
 $rg = az group create -n $resourceGroupName -l $location | ConvertFrom-Json
@@ -33,6 +43,11 @@ $rg = az group create -n $resourceGroupName -l $location | ConvertFrom-Json
 echo "Creating an Azure Identity..."
 $identity = az identity create -g $resourceGroupName -n $identityName | ConvertFrom-Json
 #$identity = az identity show  -g $resourceGroupName -n $identityName | ConvertFrom-Json
+
+echo "Creating Key Vault..."
+$keyVault = az keyvault create -n $keyVaultName -g $resourceGroupName -l $location --retention-days 7 | ConvertFrom-Json
+#$keyVault = (az keyvault show -n $keyVaultName | ConvertFrom-Json) # retrieve existing KV
+
 
 echo "creating SP $spName..."
 $sp = az ad sp create-for-rbac --skip-assignment --name $spName | ConvertFrom-Json
@@ -46,22 +61,25 @@ $nodesubnet = az network vnet subnet create -g $resourceGroupName --vnet-name $v
 
 echo "Creating AKS cluster..." # doesn't work with AKS with Managed Identity!
 #$aks = az aks create -n $aksName -g $resourceGroupName --enable-managed-identity --kubernetes-version $aksVersion --node-count 1 | ConvertFrom-Json
-$aks = az aks create -n $aksName -g $resourceGroupName --service-principal $sp.appId --client-secret $sp.password --kubernetes-version $aksVersion --node-count 1 `
-  --network-plugin azure --vnet-subnet-id $nodesubnet.id `
+$aks = az aks create -n $aksName -g $resourceGroupName --service-principal $sp.appId --client-secret $sp.password --kubernetes-version $aksVersion --node-count 2 `
+  --network-plugin azure --vnet-subnet-id $nodesubnet.id --node-vm-size "Standard_DS2_v2" `
    | ConvertFrom-Json
+
+
+#   brazilsouth   
+#   Standard_DS2_v2
+#   Standard_F4s_v2  
 #NOT FOUND --pod-subnet-id $podsubnet.id `  
 #$aks = (az aks show -n $aksName -g $resourceGroupName | ConvertFrom-Json) # retrieve existing AKS
 
+sleep 10
 
 echo "Connecting/athenticating to AKS..."
-az aks get-credentials -n $aksName -g $resourceGroupName
+az aks get-credentials -n $aksName -g $resourceGroupName --overwrite-existing
 
 sleep 20
 kubectl get po -A
 
-echo "Creating Key Vault..."
-$keyVault = az keyvault create -n $keyVaultName -g $resourceGroupName -l $location --retention-days 7 | ConvertFrom-Json
-#$keyVault = (az keyvault show -n $keyVaultName | ConvertFrom-Json) # retrieve existing KV
 
 echo "Creating Secrets in Key Vault..."
 az keyvault secret set --name $secret1Name --value "u_rpsr" --vault-name $keyVaultName
@@ -149,6 +167,8 @@ az role assignment create --role "Managed Identity Operator" --assignee $aks.ser
 
 echo "Setting policy to access secrets in Key Vault..."
 az keyvault set-policy -n $keyVaultName --secret-permissions get --spn $identity.clientId
+
+sleep 10
 
 echo "Adding AzureIdentity and AzureIdentityBinding..."
 $aadPodIdentityAndBinding = @"
@@ -243,4 +263,4 @@ If ($cleanAfter -eq "true") {
   az ad sp delete --id $sp.appId
   echo "deleting RG  $resourceGroupName ..."
   az group delete -n $resourceGroupName --no-wait -y
-}
+} 
