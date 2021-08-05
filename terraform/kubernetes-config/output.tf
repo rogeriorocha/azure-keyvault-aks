@@ -1,3 +1,4 @@
+/*
 output "secret-provider-class" {
   description = "tasd"
   value = templatefile(
@@ -15,3 +16,4 @@ output "secret-provider-class" {
                  secret2Name = var.secret2Name
         })
 }              
+*/

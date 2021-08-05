@@ -262,11 +262,6 @@ resource "azurerm_kubernetes_cluster" "aks" {
   }
 }  
 
-output "vnet_id" {
-  description = "The id of the newly created vNet"
-  value       = azurerm_virtual_network.vn-aks.subnet.*.name
-}
-
 module "kubernetes-config" {
   #depends_on   = [module.aks-cluster]
   source       = "./kubernetes-config"
@@ -278,28 +273,21 @@ module "kubernetes-config" {
   tenantId         = data.azurerm_client_config.current.tenant_id
 }
 
-/*
-resource "kubectl_manifest" "test" {
-    sensitive_fields = [
-        "metadata.annotations.my-secret-annotation"
-    ]
-    yaml_body = <<YAML
-apiVersion: admissionregistration.k8s.io/v1beta1
-kind: MutatingWebhookConfiguration
-metadata:
-  name: istio-sidecar-injector
-  annotations:
-    my-secret-annotation: "this is very secret"
-webhooks:
-  - clientConfig:
-      caBundle: ""
-YAML
-}
-*/
 
 
-output "secret-provider-class" {
-  #depends_on   = [module.kubernetes-config]
-  value       = module.kubernetes-config.secret-provider-class
-  description = "secret-provider-class yaml"
+resource "kubectl_manifest" "secret-provider-class" {
+  yaml_body = templatefile(
+               "${path.root}/secret-provider-class.yaml"
+               , 
+               { tenantId = "\"${data.azurerm_client_config.current.tenant_id}\"", 
+                 resourceGroupName = "\"${azurerm_resource_group.rg.name}\"", 
+                 subscriptionId = "\"${data.azurerm_client_config.current.subscription_id}\"",
+                 secretProviderClassName = var.secretProviderClassName,
+                 keyVaultName = var.keyVaultName,
+                 secretName = var.secretName,
+                 secret1Alias = var.secret1Alias,
+                 secret2Alias = var.secret2Alias,
+                 secret1Name = var.secret1Name,
+                 secret2Name = var.secret2Name
+        })
 }

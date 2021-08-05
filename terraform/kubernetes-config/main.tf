@@ -4,6 +4,7 @@ terraform {
       source = "hashicorp/kubernetes"
       version = "= 2.4.1"
     }
+
     helm = {
       source  = "hashicorp/helm"
       version = "= 2.2.0"
@@ -99,10 +100,7 @@ resource helm_release csi-secrets-store {
   }
 }
 
-
 resource "local_file" "kubeconfig" {
   content = var.kubeconfig
   filename = "${path.root}/kubeconfig"
 }
-
-

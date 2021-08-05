@@ -10,7 +10,6 @@ variable "resourceGroup" {
   type = string
 }
   
-
 variable "subscriptionId" {
   type = string
 }
@@ -19,6 +18,7 @@ variable "tenantId" {
   type = string
 }
 
+/*
 variable secretProviderClassName { 
   default = "secret-provider-kv"
 }
@@ -55,3 +55,5 @@ variable  identityName {
 variable  identitySelector {
   default = "azure-kv"
 }
+
+*/
