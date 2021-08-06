@@ -68,7 +68,7 @@ provider "azuread" {
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_resource_group" "rg" {
-  name     = "rg-demo-rpsr-tf-23"
+  name     = "rg-demo-rpsr-tf-10"
   location = "East US 2"
 }
 
@@ -284,7 +284,7 @@ resource "azurerm_key_vault_access_policy" "kvp-id-aks" {
 #}
 
 resource "azurerm_kubernetes_cluster" "aks" {
-  name                = "aks-tf-demo"
+  name                = "aks-tf-demo-2"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   dns_prefix          = "test"
@@ -326,7 +326,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
 
 ### PROVIDER AZURE INSTALLER
 data "kubectl_file_documents" "manifests-from-provider-azure-installer" {
-  content = file("${path.root}/provider-azure-installer.yaml")
+  content = file("${path.root}/deploy/provider-azure-installer.yaml")
 }
 
 resource "kubectl_manifest" "provider-azure-installer" {
@@ -350,7 +350,7 @@ module "kubernetes-config" {
 
 resource "kubectl_manifest" "secret-provider-class" {
   yaml_body = templatefile(
-    "${path.root}/secret-provider-class.yaml"
+    "${path.root}/deploy/secret-provider-class.yaml"
     ,
     { tenantId                = "\"${data.azurerm_client_config.current.tenant_id}\"",
       resourceGroupName       = "\"${azurerm_resource_group.rg.name}\"",
@@ -369,16 +369,8 @@ resource "kubectl_manifest" "secret-provider-class" {
   ]
 }
 
-
-#echo "Installing AAD Pod Identity into AKS..."
-#kubectl apply -f https://raw.githubusercontent.com/Azure/aad-pod-identity/master/deploy/infra/deployment-rbac.yaml
-#sleep 10 
-#kubectl get pods
-
-
-
 data "kubectl_file_documents" "manifests-from-aad-pod-identity" {
-  content = file("${path.root}/aad-pod-identity-deployment-rbac.yaml")
+  content = file("${path.root}/deploy/aad-pod-identity-deployment-rbac.yaml")
 }
 
 resource "kubectl_manifest" "aad-pod-identity" {
@@ -390,7 +382,7 @@ resource "kubectl_manifest" "aad-pod-identity" {
 #### azure-identity-and-binding
 resource "kubectl_manifest" "azure-identity" {
   yaml_body = templatefile(
-    "${path.root}/azure-identity.yaml"
+    "${path.root}/deploy/azure-identity.yaml"
     ,
     {
       identityName      = azurerm_user_assigned_identity.id-aks-kv.name,
@@ -403,7 +395,7 @@ resource "kubectl_manifest" "azure-identity" {
 
 resource "kubectl_manifest" "azure-identity-binding" {
   yaml_body = templatefile(
-    "${path.root}/azure-identity-binding.yaml"
+    "${path.root}/deploy/azure-identity-binding.yaml"
     ,
     {
       identityName     = azurerm_user_assigned_identity.id-aks-kv.name,
@@ -416,7 +408,7 @@ resource "kubectl_manifest" "azure-identity-binding" {
 /*
 data "kubectl_file_documents" "manifests-from-azure-identity-and-binding" {
   content = templatefile(
-    "${path.root}/azure-identity-and-binding.yaml"
+    "${path.root}/deploy/azure-identity-and-binding.yaml"
     ,
     {
       identityName      = azurerm_user_assigned_identity.id-aks-kv.name,
@@ -439,7 +431,7 @@ resource "kubectl_manifest" "manifests-from-azure-identity-and-binding" {
 ##### SAMPLE BUSYBOX
 resource "kubectl_manifest" "busybox-test" {
   yaml_body = templatefile(
-    "${path.root}/busybox-test.yaml"
+    "${path.root}/deploy/busybox-test.yaml"
     ,
     {
       identitySelector        = var.identitySelector,
@@ -451,6 +443,92 @@ resource "kubectl_manifest" "busybox-test" {
   kubectl_manifest.secret-provider-class]
 }
 
+#### APIM
+
+resource "azurerm_api_management" "apim" {
+  name                = "apim-demo-rpsr"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  publisher_name      = "My Company"
+  publisher_email     = "rogeriosilvarocha@gmail.com"
+
+  sku_name = "Developer_1"
+}
+
+
+
+
+#### api-sample
+data "kubectl_file_documents" "manifests-api-sample" {
+  content = file("/mnt/c/Users/rpsr/api-produto/deploy.yaml")
+}
+
+resource "kubectl_manifest" "api-sample" {
+  count     = length(data.kubectl_file_documents.manifests-api-sample.documents)
+  yaml_body = element(data.kubectl_file_documents.manifests-api-sample.documents, count.index)
+}
+####
+
+
+#### get lb ip
+data "kubernetes_service" "api-service" {
+  metadata {
+    name = "api-service"
+    namespace = "default"
+  }
+  depends_on = [
+    kubectl_manifest.api-sample
+  ]
+}
+
+locals {
+  #sampleAPI_baseUrl = "http://${data.kubernetes_service.api-service.status.0.load_balancer.0.ingress.0.ip}/api"
+  sampleAPI_baseUrl = "http://${data.kubernetes_service.api-service.status.0.load_balancer.0.ingress.0.ip}:8080/x"
+
+  curl_baseUrl = "https://${azurerm_api_management.apim.name}.azure-api.net/sample"
+}
+
+output "load_balancer_ip" {
+  value = data.kubernetes_service.api-service.status.0.load_balancer.0.ingress.0.ip
+}
+
+
+
+output "apim-access" {
+  value = <<EOF
+
+**** TEST 
+curl ${local.curl_baseUrl}/produto/ | jq
+curl -X POST ${local.curl_baseUrl}/produto -i -H 'accept: application/json' -H 'content-Type: application/json' -d '{"nome": "Geladeira","preco": 750,  "categoria": "Eletrodomésticos"}'
+curl -X POST ${local.curl_baseUrl}/produto -i -H 'accept: application/json' -H 'content-Type: application/json' -d '{"nome": "Fogão"    ,"preco": 350,  "categoria": "Eletrodomésticos"}'
+curl -X POST ${local.curl_baseUrl}/produto -i -H 'accept: application/json' -H 'content-Type: application/json' -d '{"nome": "Freezer"  ,"preco": 150,  "categoria": "Eletrodomésticos"}'
+curl ${local.curl_baseUrl}/produto/ | jq -r '.product[] | "\(._id)$\(.nome)$\(.preco)"' | column -ts$
+
+EOF
+}  
+
+####
+
+resource "azurerm_api_management_api" "sample-api" {
+  #count = 0
+  name                  = "sample-api"
+  resource_group_name   = azurerm_resource_group.rg.name
+  api_management_name   = azurerm_api_management.apim.name
+  revision              = "1"
+  display_name          = "Sample API"
+  path                  = "sample"
+  protocols             = ["https", "http"]
+  subscription_required = false
+
+  service_url = local.sampleAPI_baseUrl
+
+  import {
+    content_format = "openapi"
+    content_value  = file("/mnt/c/Users/rpsr/api-produto/src/swagger.yaml")
+  }
+}
+
+
 /*
 output "current_object_id" {
   description = "current.object_id"
@@ -461,7 +539,7 @@ output "current_object_id" {
 output "busybox-test-deploy" {
   description = "busybox-test-deploy"
   value = templatefile(
-               "${path.root}/busybox-test.yaml"
+               "${path.root}/deploy/busybox-test.yaml"
                , 
                { 
                  identitySelector         = var.identitySelector,
@@ -479,7 +557,7 @@ output "qtde-manifestos" {
 output "azure-identity-and-binding-out" {
   description = ""
   value = templatefile(
-               "${path.root}/azure-identity-and-binding.yaml"
+               "${path.root}/deploy/azure-identity-and-binding.yaml"
                , 
                { 
                  identityName         = azurerm_user_assigned_identity.id-aks-kv.name,
