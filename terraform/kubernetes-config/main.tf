@@ -90,6 +90,7 @@ helm --namespace csi-driver install csi-secrets-store secrets-store-csi-driver/s
 resource helm_release csi-secrets-store {
   namespace =  "csi-driver" 
   name       = "csi-secrets-store"
+  version    = "0.1.0"
 
   repository = "https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/master/charts"
   chart      = "secrets-store-csi-driver"

@@ -56,6 +56,7 @@ provider "kubernetes" {
 }
 
 
+
 provider "azurerm" {
   features {}
 }
@@ -67,7 +68,7 @@ provider "azuread" {
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_resource_group" "rg" {
-  name     = "rg-demo-tf"
+  name     = "rg-demo-terraform"
   location = "East US 2"
 }
 
@@ -90,6 +91,7 @@ resource "azuread_application" "app" {
   display_name                  = "app-sample-tf"
   sign_in_audience              = "AzureADMyOrg"
 }
+
 
 resource "azuread_service_principal" "sp-aks" {
   application_id               = azuread_application.app.application_id
@@ -114,10 +116,11 @@ resource "azurerm_key_vault" "kv" {
   #purge_protection_enabled    = false
 
   sku_name = "standard"
-  
+ 
   access_policy {
     tenant_id = data.azurerm_client_config.current.tenant_id
     object_id = data.azurerm_client_config.current.object_id
+                 
 
     key_permissions = [
       "Get",
@@ -184,34 +187,21 @@ resource "azurerm_subnet" "sn-node" {
   address_prefixes     = ["10.240.0.0/16"]
 }
 
-
-
-
 resource "azurerm_role_assignment" "role-kv-id" {
   scope                = azurerm_key_vault.kv.id
   role_definition_name = "Reader"
   principal_id         = azurerm_user_assigned_identity.id-aks-kv.principal_id
 }
 
-/*
-az role assignment create --role "" --assignee $aks.servicePrincipalProfile.clientId --scope $identity.id
 
+# az role assignment create --role "" --assignee $aks.servicePrincipalProfile.clientId --scope $identity.id
 resource "azurerm_role_assignment" "example" {
-  scope                = azurerm_key_vault.kv.id
+  scope                = azurerm_user_assigned_identity.id-aks-kv.id
   role_definition_name = "Managed Identity Operator"
-  principal_id         = azurerm_user_assigned_identity.id-aks-kv.principal_id
+  principal_id         = azuread_service_principal.sp-aks.id
 }
-*/
 
-resource "azurerm_key_vault_access_policy" "kvp-id-aks" {
-  key_vault_id = azurerm_key_vault.kv.id
-  tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = azurerm_user_assigned_identity.id-aks-kv.principal_id
 
-  secret_permissions = [
-    "Get",
-  ]
-}
 
 ## AKS
 #$aks = az aks create -n $aksName -g $resourceGroupName --service-principal $sp.appId --client-secret $sp.password --kubernetes-version $aksVersion --node-count 2 `
@@ -223,15 +213,12 @@ resource "azurerm_key_vault_access_policy" "kvp-id-aks" {
 #}
 
 resource "azurerm_kubernetes_cluster" "aks" {
-  name                = "aks-tf"
+  name                = "aks-tf-demo"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   dns_prefix          = "test"
   kubernetes_version  = "1.19.11"
-
-  #network_profile     - "azure"
-
- linux_profile {
+  linux_profile {
     admin_username = "ubuntu"
 
     ssh_key {
@@ -243,7 +230,6 @@ resource "azurerm_kubernetes_cluster" "aks" {
         load_balancer_sku = "Standard"
         network_plugin = "azure"
   }  
-
 
   default_node_pool {
     name           = "default"
@@ -262,6 +248,19 @@ resource "azurerm_kubernetes_cluster" "aks" {
   }
 }  
 
+### PROVIDER AZURE INSTALLER
+data "kubectl_file_documents" "manifests-from-provider-azure-installer" {
+    content = file("${path.root}/provider-azure-installer.yaml")
+}      
+
+resource "kubectl_manifest" "provider-azure-installer" {
+    count     = length(data.kubectl_file_documents.manifests-from-provider-azure-installer.documents)
+    yaml_body = element(data.kubectl_file_documents.manifests-from-provider-azure-installer.documents, count.index)
+}
+
+####
+
+
 module "kubernetes-config" {
   #depends_on   = [module.aks-cluster]
   source       = "./kubernetes-config"
@@ -272,8 +271,6 @@ module "kubernetes-config" {
   subscriptionId   = data.azurerm_client_config.current.subscription_id
   tenantId         = data.azurerm_client_config.current.tenant_id
 }
-
-
 
 resource "kubectl_manifest" "secret-provider-class" {
   yaml_body = templatefile(
@@ -291,3 +288,97 @@ resource "kubectl_manifest" "secret-provider-class" {
                  secret2Name = var.secret2Name
         })
 }
+
+
+#echo "Installing AAD Pod Identity into AKS..."
+#kubectl apply -f https://raw.githubusercontent.com/Azure/aad-pod-identity/master/deploy/infra/deployment-rbac.yaml
+#sleep 10 
+#kubectl get pods
+
+
+
+data "kubectl_file_documents" "manifests-from-aad-pod-identity" {
+    content = file("${path.root}/aad-pod-identity-deployment-rbac.yaml")
+}      
+
+resource "kubectl_manifest" "aad-pod-identity" {
+    count     = length(data.kubectl_file_documents.manifests-from-aad-pod-identity.documents)
+    yaml_body = element(data.kubectl_file_documents.manifests-from-aad-pod-identity.documents, count.index)
+}
+
+
+## azure-identity-and-binding.yaml
+
+data "kubectl_file_documents" "manifests-from-azure-identity-and-binding" {
+    content = templatefile(
+               "${path.root}/azure-identity-and-binding.yaml"
+               , 
+               { 
+                 identityName         = azurerm_user_assigned_identity.id-aks-kv.name,
+                 identity_id          = azurerm_user_assigned_identity.id-aks-kv.id,
+                 identity_clientId    = azurerm_user_assigned_identity.id-aks-kv.client_id
+                 identitySelector     = var.identitySelector 
+               }
+        )
+}
+
+resource "kubectl_manifest" "manifests-from-azure-identity-and-binding" {
+  count     = length(data.kubectl_file_documents.manifests-from-azure-identity-and-binding.documents)
+  yaml_body = element(data.kubectl_file_documents.manifests-from-azure-identity-and-binding.documents, count.index)
+  force_new = true
+  depends_on = [azurerm_kubernetes_cluster.aks]
+}
+
+##### SAMPLE BUSYBOX
+resource "kubectl_manifest" "busybox-test" {
+  yaml_body = templatefile(
+               "${path.root}/busybox-test.yaml"
+               , 
+               { 
+                 identitySelector         = var.identitySelector,
+                 secretName               = var.secretName,
+                 secretProviderClassName  = var.secretProviderClassName
+               }
+            )
+  depends_on = [azurerm_kubernetes_cluster.aks]            
+}
+
+/*
+output "current_object_id" {
+  description = "current.object_id"
+  value = data.azurerm_client_config.current.object_id
+}  
+
+
+output "busybox-test-deploy" {
+  description = "busybox-test-deploy"
+  value = templatefile(
+               "${path.root}/busybox-test.yaml"
+               , 
+               { 
+                 identitySelector         = var.identitySelector,
+                 secretName               = var.secretName,
+                 secretProviderClassName  = var.secretProviderClassName
+               }
+            )
+}
+
+output "qtde-manifestos" {
+  description = "qtde"
+  value = length(data.kubectl_file_documents.manifests-from-aad-pod-identity.documents)
+}
+
+output "azure-identity-and-binding-out" {
+  description = ""
+  value = templatefile(
+               "${path.root}/azure-identity-and-binding.yaml"
+               , 
+               { 
+                 identityName         = azurerm_user_assigned_identity.id-aks-kv.name,
+                 identity_id          = azurerm_user_assigned_identity.id-aks-kv.id,
+                 identity_clientId    = azurerm_user_assigned_identity.id-aks-kv.client_id
+                 identitySelector     = var.identitySelector 
+               }
+        )
+}              
+*/
