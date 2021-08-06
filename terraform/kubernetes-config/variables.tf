@@ -9,7 +9,7 @@ variable "kubeconfig" {
 variable "resourceGroup" {
   type = string
 }
-  
+
 variable "subscriptionId" {
   type = string
 }

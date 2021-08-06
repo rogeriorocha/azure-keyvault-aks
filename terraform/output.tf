@@ -1,3 +1,8 @@
+output "aks-configure-kubectl-local" {
+  description = "Configure kubectl to AKS"
+  value       = "az aks get-credentials -n ${azurerm_kubernetes_cluster.aks.name} -g ${azurerm_resource_group.rg.name} --overwrite-existing"
+}
+
 /*
 output "secret-provider-class" {
   description = "tasd"

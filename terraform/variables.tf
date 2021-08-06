@@ -2,62 +2,62 @@
 #variable "client_secret" {}
 
 variable "agent_count" {
-    default = 2
+  default = 2
 }
 
 variable "ssh_public_key" {
-    default = "~/.ssh/id_rsa.pub"
+  default = "~/.ssh/id_rsa.pub"
 }
 
 variable "dns_prefix" {
-    default = "k8stest"
+  default = "k8stest"
 }
 
-variable cluster_name {
-    default = "k8stest"
+variable "cluster_name" {
+  default = "k8stest"
 }
 
-variable resource_group_name {
-    default = "azure-k8stest"
+variable "resource_group_name" {
+  default = "azure-k8stest"
 }
 
-variable location {
-    default = "Central US"
+variable "location" {
+  default = "Central US"
 }
 
 
-variable secretProviderClassName { 
+variable "secretProviderClassName" {
   default = "secret-provider-kv"
 }
 
-variable keyVaultName {
+variable "keyVaultName" {
   default = "kv-aks"
 }
 
-variable secretName {
+variable "secretName" {
   default = "secret-kv"
 }
 
-variable secret1Name {
+variable "secret1Name" {
   default = "DBUsername"
 }
 
-variable secret2Name {
+variable "secret2Name" {
   default = "DBPassword"
 }
 
-variable secret1Alias {
+variable "secret1Alias" {
   default = "DB_USERNAME"
 }
 
-variable secret2Alias {
+variable "secret2Alias" {
   default = "DB_PASSWORD"
 }
 
-variable  identityName {
-  default = "id-aks-kv" 
+variable "identityName" {
+  default = "id-aks-kv"
 }
 
-variable  identitySelector {
+variable "identitySelector" {
   default = "azure-kv"
 }
