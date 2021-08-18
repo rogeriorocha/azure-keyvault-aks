@@ -19,7 +19,6 @@ terraform {
   }
 }
 
-
 data "azurerm_kubernetes_cluster" "default" {
   #depends_on          = [module.aks-cluster] # refresh cluster state before reading
 
@@ -34,9 +33,6 @@ provider "kubectl" {
   cluster_ca_certificate = base64decode(data.azurerm_kubernetes_cluster.default.kube_config.0.cluster_ca_certificate)
   client_certificate     = base64decode(data.azurerm_kubernetes_cluster.default.kube_config.0.client_certificate)
   client_key             = base64decode(data.azurerm_kubernetes_cluster.default.kube_config.0.client_key)
-  #token                  = data.aws_eks_cluster_auth.main.token
-  #token                  = data.azurerm_kubernetes_cluster.default.kube_config.0.client_key
-  #load_config_file       = false
 }
 
 provider "helm" {
@@ -55,20 +51,17 @@ provider "kubernetes" {
   cluster_ca_certificate = base64decode(azurerm_kubernetes_cluster.aks.kube_config.0.cluster_ca_certificate)
 }
 
-
-
 provider "azurerm" {
   features {}
 }
 
 provider "azuread" {
-  #version = "=1.6.0"
 }
 
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_resource_group" "rg" {
-  name     = "rg-demo-rpsr-tf-10"
+  name     = "rg-demo-rpsr-tf"
   location = "East US 2"
 }
 
@@ -116,33 +109,6 @@ resource "azurerm_key_vault" "kv" {
   #purge_protection_enabled    = false
 
   sku_name = "standard"
-  /*
-  access_policy {
-    tenant_id = data.azurerm_client_config.current.tenant_id
-    object_id = data.azurerm_client_config.current.object_id
-
-
-    key_permissions = [
-      "Get",
-      "list"
-    ]
-
-    secret_permissions = [
-      "set",
-      "get",
-      "delete",
-      "purge",
-      "recover",
-      "list"
-    ]
-
-    storage_permissions = [
-      "Get",
-      "list"
-    ]
-  }
-  */
-
 }
 
 
@@ -254,34 +220,12 @@ resource "azurerm_role_assignment" "role-kv-id" {
   principal_id         = azurerm_user_assigned_identity.id-aks-kv.principal_id
 }
 
-
-# az role assignment create --role "" --assignee $aks.servicePrincipalProfile.clientId --scope $identity.id
 resource "azurerm_role_assignment" "example" {
   scope                = azurerm_user_assigned_identity.id-aks-kv.id
   role_definition_name = "Managed Identity Operator"
   principal_id         = azuread_service_principal.sp-aks.id
 }
 
-/* RPSR
-resource "azurerm_key_vault_access_policy" "kvp-id-aks" {
-  key_vault_id = azurerm_key_vault.kv.id
-  tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = azurerm_user_assigned_identity.id-aks-kv.principal_id
-
-  secret_permissions = [
-    "Get",
-  ]
-}
-*/
-
-## AKS
-#$aks = az aks create -n $aksName -g $resourceGroupName --service-principal $sp.appId --client-secret $sp.password --kubernetes-version $aksVersion --node-count 2 `
-#  --network-plugin azure --vnet-subnet-id $nodesubnet.id --node-vm-size "Standard_DS2_v2" 
-
-
-#resource "azuread_service_principal_password" "example" {
-#  service_principal_id = azuread_service_principal.example.object_id
-#}
 
 resource "azurerm_kubernetes_cluster" "aks" {
   name                = "aks-tf-demo-2"
@@ -446,7 +390,7 @@ resource "kubectl_manifest" "busybox-test" {
 #### APIM
 
 resource "azurerm_api_management" "apim" {
-  name                = "apim-demo-rpsr"
+  name                = "apim-demo-rpsr-tf"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   publisher_name      = "My Company"
@@ -460,7 +404,7 @@ resource "azurerm_api_management" "apim" {
 
 #### api-sample
 data "kubectl_file_documents" "manifests-api-sample" {
-  content = file("/mnt/c/Users/rpsr/api-produto/deploy.yaml")
+  content = file("./deploy/api-produto.yaml")
 }
 
 resource "kubectl_manifest" "api-sample" {
@@ -468,7 +412,6 @@ resource "kubectl_manifest" "api-sample" {
   yaml_body = element(data.kubectl_file_documents.manifests-api-sample.documents, count.index)
 }
 ####
-
 
 #### get lb ip
 data "kubernetes_service" "api-service" {
@@ -524,7 +467,7 @@ resource "azurerm_api_management_api" "sample-api" {
 
   import {
     content_format = "openapi"
-    content_value  = file("/mnt/c/Users/rpsr/api-produto/src/swagger.yaml")
+    content_value  = file("./deploy/api-produto-swagger.yaml")
   }
 }
 
